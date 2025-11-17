@@ -1,6 +1,6 @@
 Flask
-paddlepaddle==2.6.1
-paddleocr==2.7.0.3
-pymupdf
+easyocr
+torch
 Pillow
+python-dotenv
 gunicorn
