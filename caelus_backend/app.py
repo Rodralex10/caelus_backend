@@ -1,82 +1,85 @@
 from flask import Flask, request, jsonify
-import pytesseract
-from pdf2image import convert_from_path
-from PIL import Image
 import os
 import uuid
+import fitz  # PyMuPDF
+from paddleocr import PaddleOCR
+from PIL import Image
 
 app = Flask(__name__)
 
+# Pasta para uploads
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# Inicializar OCR (Português + Inglês)
+ocr = PaddleOCR(lang="pt", use_angle_cls=True)
+
+def extract_text_from_image(img):
+    results = ocr.ocr(img, cls=True)
+    text = ""
+    for line in results:
+        for part in line:
+            text += part[1][0] + "\n"
+    return text
+
+
+def extract_text_from_pdf(pdf_path):
+    doc = fitz.open(pdf_path)
+    text_final = ""
+
+    for page in doc:
+        pix = page.get_pixmap(dpi=200)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        text_final += extract_text_from_image(img)
+
+    return text_final
+
+
 def extract_info(text):
-    text = text.lower()
-
-    name = ""
-    freq = ""
-    dosage = ""
-    until = ""
-
-    for line in text.split("\n"):
-        if "mg" in line or "ml" in line:
-            dosage = line.strip()
-
-        if "de" in line and "em" in line:
-            freq = line.strip()
-
-        if "até" in line or "durante" in line:
-            until = line.strip()
-
-        if any(word in line for word in ["dol", "ben-u-ron", "aspirina", "ibuprof", "paracet"]):
-            name = line.strip()
+    text_lower = text.lower()
 
     return {
-        "medicine_name": name,
-        "dosage": dosage,
-        "frequency": freq,
-        "until_when": until,
+        "medicine_name": "",
+        "frequency": "",
+        "dosage": "",
+        "until": "",
+        "raw_text": text
     }
 
 
 @app.route("/process", methods=["POST"])
-def process_file():
+def process():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
-    file = request.files["file"]
+    uploaded = request.files["file"]
 
-    filename = f"{uuid.uuid4().hex}-{file.filename}"
+    filename = f"{uuid.uuid4().hex}-{uploaded.filename}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
-
-    extracted_text = ""
+    uploaded.save(filepath)
 
     try:
         if filename.lower().endswith(".pdf"):
-            images = convert_from_path(filepath, dpi=200)
-
-            for img in images:
-                extracted_text += "\n" + pytesseract.image_to_string(img)
-
+            text = extract_text_from_pdf(filepath)
         else:
             img = Image.open(filepath)
-            extracted_text = pytesseract.image_to_string(img)
+            text = extract_text_from_image(img)
+
+        info = extract_info(text)
+
+        return jsonify({
+            "ok": True,
+            "extracted_text": text,
+            "info": info
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    info = extract_info(extracted_text)
-
-    return jsonify({
-        "raw_text": extracted_text,
-        "extracted": info
-    })
-
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Caelus OCR API is running"
+    return "PaddleOCR API is running"
 
 
 if __name__ == "__main__":
