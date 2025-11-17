@@ -1,6 +1,6 @@
 Flask
-pytesseract
-pdf2image
+paddlepaddle==2.6.1
+paddleocr==2.7.0.3
+pymupdf
 Pillow
-python-dotenv
 gunicorn
