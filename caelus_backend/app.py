@@ -1,86 +1,79 @@
 from flask import Flask, request, jsonify
-import os
-import uuid
-import fitz  # PyMuPDF
-from paddleocr import PaddleOCR
+import easyocr
 from PIL import Image
+import uuid
+import os
 
 app = Flask(__name__)
 
-# Pasta para uploads
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Inicializar OCR (Português + Inglês)
-ocr = PaddleOCR(lang="pt", use_angle_cls=True)
-
-def extract_text_from_image(img):
-    results = ocr.ocr(img, cls=True)
-    text = ""
-    for line in results:
-        for part in line:
-            text += part[1][0] + "\n"
-    return text
-
-
-def extract_text_from_pdf(pdf_path):
-    doc = fitz.open(pdf_path)
-    text_final = ""
-
-    for page in doc:
-        pix = page.get_pixmap(dpi=200)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        text_final += extract_text_from_image(img)
-
-    return text_final
-
+# Inicializar o EasyOCR (português + inglês)
+reader = easyocr.Reader(["pt", "en"], gpu=False)
 
 def extract_info(text):
-    text_lower = text.lower()
+    text = text.lower()
+    name = ""
+    freq = ""
+    dosage = ""
+    until = ""
+
+    for line in text.split("\n"):
+        line = line.strip()
+
+        if "mg" in line or "ml" in line:
+            dosage = line
+
+        if "de" in line and "em" in line:
+            freq = line
+
+        if "até" in line or "durante" in line:
+            until = line
+
+        if any(med in line for med in [
+            "adol", "ben-u-ron", "aspirina", "ibuprof", "paracet"
+        ]):
+            name = line
 
     return {
-        "medicine_name": "",
-        "frequency": "",
-        "dosage": "",
-        "until": "",
-        "raw_text": text
+        "medicine_name": name,
+        "dosage": dosage,
+        "frequency": freq,
+        "until_when": until,
     }
 
-
 @app.route("/process", methods=["POST"])
-def process():
+def process_file():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
-    uploaded = request.files["file"]
+    file = request.files["file"]
 
-    filename = f"{uuid.uuid4().hex}-{uploaded.filename}"
+    filename = f"{uuid.uuid4().hex}-{file.filename}"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-    uploaded.save(filepath)
+    file.save(filepath)
 
     try:
-        if filename.lower().endswith(".pdf"):
-            text = extract_text_from_pdf(filepath)
-        else:
-            img = Image.open(filepath)
-            text = extract_text_from_image(img)
+        img = Image.open(filepath).convert("RGB")
 
-        info = extract_info(text)
-
-        return jsonify({
-            "ok": True,
-            "extracted_text": text,
-            "info": info
-        })
+        # EasyOCR → texto
+        result = reader.readtext(filepath, detail=0)
+        extracted_text = "\n".join(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    info = extract_info(extracted_text)
+
+    return jsonify({
+        "raw_text": extracted_text,
+        "extracted": info
+    })
 
 @app.route("/", methods=["GET"])
 def home():
-    return "PaddleOCR API is running"
-
+    return "Caelus OCR API with EasyOCR is running"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
