@@ -1,6 +1,6 @@
 Flask
+PyMuPDF
 easyocr
 torch
-Pillow
-python-dotenv
+opencv-python-headless
 gunicorn
