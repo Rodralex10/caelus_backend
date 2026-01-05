@@ -11,8 +11,7 @@ register_heif_opener()
 
 app = FastAPI(title="Prescription OCR API")
 
-# Initialize PaddleOCRVL with defaults (no model_dir arg)
-pipeline = PaddleOCRVL()
+pipeline = PaddleOCRVL()  # default init
 
 SUPPORTED_IMAGE_TYPES = {
     "image/jpeg", "image/png", "image/heic", "image/heif",
