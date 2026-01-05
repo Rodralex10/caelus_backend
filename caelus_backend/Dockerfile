@@ -1,4 +1,4 @@
-FROM paddlepaddle/paddle:2.6.2  # CPU base with Paddle libs
+FROM paddlepaddle/paddle:2.6.2
 
 RUN apt-get update && \
     apt-get install -y poppler-utils libgl1 libglib2.0-0 libheif1 && \
@@ -7,7 +7,6 @@ RUN apt-get update && \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
 
 ENV PORT=10000
