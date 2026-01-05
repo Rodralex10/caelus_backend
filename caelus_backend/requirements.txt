@@ -6,3 +6,5 @@ pillow-heif
 pdf2image
 paddleocr
 huggingface-hub
+paddlenlp
+modelscope
