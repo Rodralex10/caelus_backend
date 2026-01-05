@@ -1,79 +1,83 @@
-from flask import Flask, request, jsonify
-import easyocr
-from PIL import Image
-import uuid
-import os
+import os, tempfile, shutil
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from paddleocr import PaddleOCRVL
+from pdf2image import convert_from_bytes
+from pillow_heif import register_heif_opener
 
-app = Flask(__name__)
+register_heif_opener()
 
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+MODEL_ROOT = os.getenv("PADDLE_OCR_VL_DIR", "/app/hf_models/paddleocr_vl")
 
-# Inicializar o EasyOCR (português + inglês)
-reader = easyocr.Reader(["pt", "en"], gpu=False)
+# Load once; this model is large—use adequate memory on Render
+pipeline = PaddleOCRVL(model_dir=MODEL_ROOT)
 
-def extract_info(text):
-    text = text.lower()
-    name = ""
-    freq = ""
-    dosage = ""
-    until = ""
+app = FastAPI(title="Prescription OCR API")
 
-    for line in text.split("\n"):
-        line = line.strip()
+SUPPORTED_IMAGE_TYPES = {
+    "image/jpeg", "image/png", "image/heic", "image/heif", "image/webp", "image/tiff"
+}
+SUPPORTED_PDF_TYPES = {"application/pdf"}
+SUPPORTED_TYPES = SUPPORTED_IMAGE_TYPES | SUPPORTED_PDF_TYPES
 
-        if "mg" in line or "ml" in line:
-            dosage = line
+def ocr_image(path: str) -> str:
+    out = pipeline.predict(path)
+    # PaddleOCRVL returns a list of results; concatenate text parts
+    texts = []
+    for res in out:
+        if hasattr(res, "text"):
+            texts.append(res.text)
+        elif isinstance(res, dict) and "text" in res:
+            texts.append(res["text"])
+    return "\n".join(texts).strip()
 
-        if "de" in line and "em" in line:
-            freq = line
-
-        if "até" in line or "durante" in line:
-            until = line
-
-        if any(med in line for med in [
-            "adol", "ben-u-ron", "aspirina", "ibuprof", "paracet"
-        ]):
-            name = line
-
-    return {
-        "medicine_name": name,
-        "dosage": dosage,
-        "frequency": freq,
-        "until_when": until,
-    }
-
-@app.route("/process", methods=["POST"])
-def process_file():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-
-    file = request.files["file"]
-
-    filename = f"{uuid.uuid4().hex}-{file.filename}"
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
-
+def process_pdf(data: bytes) -> tuple[str, int]:
+    pages = convert_from_bytes(data, dpi=300)
+    tmpdir = tempfile.mkdtemp(prefix="pdf_vl_")
+    texts = []
     try:
-        img = Image.open(filepath).convert("RGB")
+        for i, img in enumerate(pages, 1):
+            p = os.path.join(tmpdir, f"page_{i}.png")
+            img.save(p, "PNG")
+            texts.append(ocr_image(p))
+        return "\n\n".join(texts).strip(), len(pages)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
-        # EasyOCR → texto
-        result = reader.readtext(filepath, detail=0)
-        extracted_text = "\n".join(result)
+def process_image(data: bytes) -> tuple[str, int]:
+    tmpdir = tempfile.mkdtemp(prefix="img_vl_")
+    p = os.path.join(tmpdir, "upload.png")
+    try:
+        with open(p, "wb") as f:
+            f.write(data)
+        return ocr_image(p), 1
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
+def extract_medicine_name(text: str) -> str:
+    """
+    Simple heuristic: take the first reasonably long uppercase-ish line.
+    Replace with a curated regex/list if you have a formulary.
+    """
+    candidates = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 3]
+    for ln in candidates:
+        alpha = sum(c.isalpha() for c in ln)
+        if alpha >= 4 and alpha / max(1, len(ln)) > 0.5:
+            return ln
+    return candidates[0] if candidates else ""
+
+@app.post("/prescription/scan")
+async def scan_prescription(file: UploadFile = File(...)):
+    if file.content_type not in SUPPORTED_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported file type.")
+    data = await file.read()
+    try:
+        if file.content_type in SUPPORTED_PDF_TYPES:
+            texto, pages = process_pdf(data)
+        else:
+            texto, pages = process_image(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail="Failed to process file.") from e
 
-    info = extract_info(extracted_text)
-
-    return jsonify({
-        "raw_text": extracted_text,
-        "extracted": info
-    })
-
-@app.route("/", methods=["GET"])
-def home():
-    return "Caelus OCR API with EasyOCR is running"
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    med_name = extract_medicine_name(texto)
+    return JSONResponse({"texto": texto, "paginas": pages, "medicamento": med_name})
