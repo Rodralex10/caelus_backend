@@ -1,6 +1,9 @@
-Flask
-PyMuPDF
-easyocr
-torch
-opencv-python-headless
-gunicorn
+fastapi
+uvicorn
+python-multipart
+pillow
+pillow-heif
+pdf2image
+paddlepaddle==2.6.1          # CPU; use paddlepaddle-gpu if you get GPU
+paddleocr
+huggingface-hub              # to pre-download PaddleOCR-VL
