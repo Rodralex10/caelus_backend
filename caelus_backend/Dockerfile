@@ -1,7 +1,7 @@
 FROM paddlepaddle/paddle:2.6.2
 
 RUN apt-get update && \
-    apt-get install -y poppler-utils libgl1 libglib2.0-0 libheif1 && \
+    apt-get install -y poppler-utils libgl1 libglib2.0-0 libheif1 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
