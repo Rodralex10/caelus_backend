@@ -5,5 +5,4 @@ pillow
 pillow-heif
 pdf2image
 paddleocr
-paddlepaddle==2.6.2       # or paddlepaddle-gpu==2.6.2 on GPU
 huggingface-hub
