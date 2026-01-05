@@ -33,7 +33,7 @@ def ocr_image(path: str) -> str:
 
 
 def process_pdf(data: bytes) -> tuple[str, int]:
-    pages = convert_from_bytes(data, dpi=300)
+    pages = convert_from_bytes(data, dpi=300)  # PDF -> images
     tmpdir = tempfile.mkdtemp(prefix="pdf_vl_")
     texts = []
     try:
