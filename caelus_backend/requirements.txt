@@ -8,3 +8,4 @@ paddleocr
 huggingface-hub
 paddlenlp
 modelscope
+paddlex
