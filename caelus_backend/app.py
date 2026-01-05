@@ -1,4 +1,6 @@
-import os, tempfile, shutil
+import os
+import tempfile
+import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from paddleocr import PaddleOCRVL
@@ -7,22 +9,21 @@ from pillow_heif import register_heif_opener
 
 register_heif_opener()
 
-MODEL_ROOT = os.getenv("PADDLE_OCR_VL_DIR", "/app/hf_models/paddleocr_vl")
-
-# Load once; this model is large—use adequate memory on Render
-pipeline = PaddleOCRVL(model_dir=MODEL_ROOT)
-
 app = FastAPI(title="Prescription OCR API")
 
+# Initialize PaddleOCRVL with defaults (no model_dir arg)
+pipeline = PaddleOCRVL()
+
 SUPPORTED_IMAGE_TYPES = {
-    "image/jpeg", "image/png", "image/heic", "image/heif", "image/webp", "image/tiff"
+    "image/jpeg", "image/png", "image/heic", "image/heif",
+    "image/webp", "image/tiff",
 }
 SUPPORTED_PDF_TYPES = {"application/pdf"}
 SUPPORTED_TYPES = SUPPORTED_IMAGE_TYPES | SUPPORTED_PDF_TYPES
 
+
 def ocr_image(path: str) -> str:
     out = pipeline.predict(path)
-    # PaddleOCRVL returns a list of results; concatenate text parts
     texts = []
     for res in out:
         if hasattr(res, "text"):
@@ -30,6 +31,7 @@ def ocr_image(path: str) -> str:
         elif isinstance(res, dict) and "text" in res:
             texts.append(res["text"])
     return "\n".join(texts).strip()
+
 
 def process_pdf(data: bytes) -> tuple[str, int]:
     pages = convert_from_bytes(data, dpi=300)
@@ -44,6 +46,7 @@ def process_pdf(data: bytes) -> tuple[str, int]:
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
+
 def process_image(data: bytes) -> tuple[str, int]:
     tmpdir = tempfile.mkdtemp(prefix="img_vl_")
     p = os.path.join(tmpdir, "upload.png")
@@ -54,17 +57,15 @@ def process_image(data: bytes) -> tuple[str, int]:
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
+
 def extract_medicine_name(text: str) -> str:
-    """
-    Simple heuristic: take the first reasonably long uppercase-ish line.
-    Replace with a curated regex/list if you have a formulary.
-    """
     candidates = [ln.strip() for ln in text.splitlines() if len(ln.strip()) > 3]
     for ln in candidates:
         alpha = sum(c.isalpha() for c in ln)
         if alpha >= 4 and alpha / max(1, len(ln)) > 0.5:
             return ln
     return candidates[0] if candidates else ""
+
 
 @app.post("/prescription/scan")
 async def scan_prescription(file: UploadFile = File(...)):
