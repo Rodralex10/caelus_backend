@@ -1,10 +1,7 @@
-FROM python:3.11-slim
+FROM paddlepaddle/paddle:2.6.2  # CPU base with Paddle libs
 
-# System deps for pdf2image/poppler, HEIC, and Paddle runtime libs
 RUN apt-get update && \
-    apt-get install -y \
-      poppler-utils libgl1 libglib2.0-0 libheif1 \
-      libgomp1 libopenblas-base liblapack3 libgfortran5 libstdc++6 && \
+    apt-get install -y poppler-utils libgl1 libglib2.0-0 libheif1 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
