@@ -8,4 +8,4 @@ paddleocr
 huggingface-hub
 paddlenlp
 modelscope
-paddlex
+paddlex[ocr]==3.3.12
